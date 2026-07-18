@@ -5,7 +5,7 @@ __pycache__/
 qdrant_data/
 fastembed_cache/.locks/
 rivdw_app.db
-snapshots/
+/snapshots/
 *.egg-info/
 .venv/
 venv/
