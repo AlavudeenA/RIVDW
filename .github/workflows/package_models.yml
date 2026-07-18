@@ -28,8 +28,8 @@ jobs:
           cache = Path("fastembed_cache")
           cache.mkdir(exist_ok=True)
 
-          print("Downloading BAAI/bge-base-en-v1.5 ...")
-          model = TextEmbedding(model_name="BAAI/bge-base-en-v1.5", cache_dir=str(cache))
+          print("Downloading BAAI/bge-small-en-v1.5 ...")
+          model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5", cache_dir=str(cache))
           list(model.embed(["warmup"]))   # force full download
           print("Done.")
           EOF
@@ -40,8 +40,8 @@ jobs:
       - name: Publish as a GitHub Release asset
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: models-bge-base-en-v1.5
-          name: "Embedding Models — BAAI/bge-base-en-v1.5"
+          tag_name: models-bge-small-en-v1.5
+          name: "Embedding Models — BAAI/bge-small-en-v1.5"
           body: |
             Pre-downloaded FastEmbed model cache for offline / restricted-network use.
 

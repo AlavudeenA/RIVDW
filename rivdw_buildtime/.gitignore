@@ -3,7 +3,7 @@ __pycache__/
 *.pyc
 *.pyo
 qdrant_data/
-fastembed_cache/
+fastembed_cache/.locks/
 rivdw_app.db
 snapshots/
 *.egg-info/

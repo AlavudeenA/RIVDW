@@ -11,7 +11,7 @@ Usage:
 from pathlib import Path
 
 CACHE_DIR = Path(__file__).parent / "fastembed_cache"
-MODEL_NAME = "BAAI/bge-base-en-v1.5"
+MODEL_NAME = "BAAI/bge-small-en-v1.5"
 
 
 def main() -> None:

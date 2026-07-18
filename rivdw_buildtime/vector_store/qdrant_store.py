@@ -28,8 +28,8 @@ def _point_id(entry_id: str) -> int:
     return int(hashlib.sha256(entry_id.encode()).hexdigest()[:15], 16)
 
 
-# BAAI/bge-base-en-v1.5 produces 768-dimensional vectors
-_VECTOR_SIZE = 768
+# BAAI/bge-small-en-v1.5 produces 384-dimensional vectors
+_VECTOR_SIZE = 384
 
 
 class QdrantStore:
