@@ -1,4 +1,4 @@
-"""Phase 1 runtime walking skeleton (see PLAIN_SUMMARY.md, "Runtime build plan").
+"""Phase 1 runtime walking skeleton (see IMPLEMENTATION_SUMMARY.md, "Runtime build plan").
 
 Takes a plain-English question, runs a plain vector search against the build-time
 Qdrant metadata store, and asks the LLM to draft one SQL query. The SQL is returned

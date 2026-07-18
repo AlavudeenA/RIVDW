@@ -114,10 +114,12 @@ user_question = "Which terminated employees were not processed in PIP this quart
 question_vector = fastembed.embed(user_question)
 
 # Search Qdrant — only look at schema metadata entries
+# Note: query_points(), not search() — search() doesn't exist on the installed
+# qdrant-client version (confirmed the hard way fixing vector_store/qdrant_store.py)
 
-schema_results = qdrant_client.search(
+schema_results = qdrant_client.query_points(
 collection_name="rivdw_metadata",
-query_vector=question_vector,
+query=question_vector,
 query_filter=Filter(
 must=[FieldCondition(
 key="entry_type",
@@ -125,7 +127,7 @@ match=MatchValue(value="schema_metadata")
 )]
 ),
 limit=10 # top 10 most relevant schema entries
-)
+).points
 
 Step 2 — Trajectory search
 
@@ -133,9 +135,9 @@ Step 2 — Trajectory search
 
 # But now filter to only approved_trajectory entries
 
-trajectory_results = qdrant_client.search(
+trajectory_results = qdrant_client.query_points(
 collection_name="rivdw_metadata",
-query_vector=question_vector,
+query=question_vector,
 query_filter=Filter(
 must=[FieldCondition(
 key="entry_type",
@@ -143,7 +145,7 @@ match=MatchValue(value="approved_trajectory")
 )]
 ),
 limit=3 # top 3 most similar past questions
-)
+).points
 
 Step 3 — Combining into one context block
 context = f"""

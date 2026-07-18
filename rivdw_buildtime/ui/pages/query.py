@@ -1,6 +1,6 @@
 """Screen: Query — search metadata using plain-English questions.
 
-Phase 1 walking skeleton (see PLAIN_SUMMARY.md, "Runtime build plan"): plain vector
+Phase 1 walking skeleton (see IMPLEMENTATION_SUMMARY.md, "Runtime build plan"): plain vector
 search over the build-time metadata, one drafted SQL query, never executed. The
 retrieval/generation logic lives in rivdw_runtime/query_engine.py, not here — this
 file only handles the UI.

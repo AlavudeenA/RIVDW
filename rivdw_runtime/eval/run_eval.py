@@ -1,4 +1,4 @@
-"""Phase 0 eval runner (see PLAIN_SUMMARY.md, "Runtime build plan").
+"""Phase 0 eval runner (see IMPLEMENTATION_SUMMARY.md, "Runtime build plan").
 
 Measures Recall@K of the current retrieval step against eval/golden_set.json — the
 yardstick every later Phase 2 change (HyDE, hybrid search, reranking, ...) gets

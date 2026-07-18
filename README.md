@@ -30,6 +30,8 @@ The build-time pipeline does the preparation work:
 
 You can review and correct AI descriptions through the **Build Metadata** screen, and all your edits are preserved in the history log.
 
+The **Query** screen then lets you type a plain-English question and get back the matched tables/columns plus a drafted (not executed) SQL query — the first working slice of the runtime half of RIVDW. See `IMPLEMENTATION_SUMMARY.md` at the repo root for the full build-time + runtime story, including what's still ahead.
+
 ---
 
 ## Connecting Your Local SQL Server
@@ -64,10 +66,8 @@ You must have the **ODBC Driver 17 for SQL Server** installed. Download it from 
 
 | Screen              | Purpose                                                                                 |
 | ------------------- | --------------------------------------------------------------------------------------- |
-| **Build Metadata**  | Select one database → generate AI descriptions → edit inline → view full change history |
-| **Run Pipeline**    | Batch-process all databases at once, watch step-by-step progress, download results      |
-| **Review Metadata** | Cross-database view — filter, approve, reject, or bulk-edit descriptions                |
-| **Manage Glossary** | Map business terms to database columns                                                  |
+| **Build Metadata**  | Select one database → generate AI descriptions → edit inline → export/import Excel → view full change history |
+| **Query**           | Type a plain-English question → get matched tables/columns, an explanation, and a drafted SQL query (not executed) |
 
 ## LLM Configuration
 
@@ -112,15 +112,18 @@ Restart the app after editing either file.
 
 ```
 rivdw_buildtime/
-├── config/           # Settings and all UI/prompt strings
-├── database/         # DB connection registry and schema crawlers
-├── pipeline/         # LangGraph pipeline and all processing nodes
-├── models/           # Pydantic data models
-├── vector_store/     # Qdrant operations
-├── glossary/         # Domain glossary loader and lookup
-├── glossary_data/    # glossary.json (editable by business users)
-├── snapshots/        # Previous crawl snapshots for diff comparison
-└── ui/               # Streamlit app and page screens
+├── config/              # Settings and all UI/prompt strings
+├── database/            # DB connection registry and schema crawler
+├── pipeline/            # Plain Python pipeline (no LangGraph) and its processing nodes
+├── models/              # Pydantic data models
+├── vector_store/        # Qdrant + FastEmbed operations
+├── fastembed_cache/     # Committed embedding model files — works fully offline after clone
+└── ui/                  # Streamlit app and page screens (Build Metadata, Query)
+
+rivdw_runtime/
+├── query_engine.py      # Phase 1: embed question -> Qdrant search -> Groq drafts SQL (not executed)
+├── prompts.py           # SQL-drafting prompt template
+└── eval/                # Golden eval set + Recall@K scoring, measured against real generated metadata
 ```
 
 ---
@@ -139,20 +142,14 @@ rivdw_buildtime/
 | `database/sqlite_store.py`         | Manages the local SQLite file: stores run history, every version of every metadata entry (the change log), and app-level settings.                                         |
 | `models/metadata_entry.py`         | The data shape for one table or column description — what fields it has, what values are allowed.                                                                          |
 | `models/pipeline_state.py`         | The data shape for what flows between pipeline steps — carries raw entries, enriched entries, counts, errors.                                                              |
-| `pipeline/graph.py`                | Wires all pipeline steps together using LangGraph. Also logs each run to SQLite.                                                                                           |
-| `pipeline/single_db_pipeline.py`   | Processes one database at a time, table by table. Used by the Build Metadata screen. Makes one LLM call per table (covers all columns at once).                            |
-| `pipeline/nodes/connect_node.py`   | Tests database connections before the crawl starts. Skips unreachable databases.                                                                                           |
-| `pipeline/nodes/crawl_node.py`     | Reads table and column structure from the database catalog and saves a snapshot file.                                                                                      |
-| `pipeline/nodes/diff_node.py`      | Compares the new crawl against the previous snapshot and passes only changed or new entries forward — saves LLM cost on unchanged tables.                                  |
+| `pipeline/single_db_pipeline.py`   | The real pipeline entry point. Processes one database at a time, table by table: crawl → normalise → enrich → guardian → store. Used by the Build Metadata screen. Makes one LLM call per table (covers all columns at once). No LangGraph, no separate connect/crawl/diff nodes — always re-crawls everything it's asked to. |
 | `pipeline/nodes/normalise_node.py` | Converts database-specific type names (like Oracle `NUMBER` or SQL Server `datetime`) into a consistent vocabulary.                                                        |
-| `pipeline/nodes/enrich_node.py`    | Calls the LLM (Groq or VS Code LM) to write plain-English descriptions for each entry. Processes in batches.                                                               |
+| `pipeline/nodes/enrich_node.py`    | Calls the LLM (Groq or VS Code LM) to write plain-English descriptions for each entry.                                                                                     |
 | `pipeline/nodes/guardian_node.py`  | Checks every AI description for quality: Is it long enough? Does it avoid filler phrases? Is the domain tag set? Marks entries as approved, needs review, or rejected.     |
-| `vector_store/qdrant_store.py`     | Saves, updates, and searches descriptions in the local Qdrant vector database. The vector store always holds the latest approved version.                                  |
-| `glossary/domain_glossary.py`      | Loads the business-term-to-column mapping from `glossary_data/glossary.json` and provides lookup methods used during enrichment.                                           |
-| `glossary_data/glossary.json`      | The actual glossary entries — editable by business users directly or through the Manage Glossary screen.                                                                   |
-| `snapshots/`                       | JSON files — one per pipeline run — storing the raw crawl output. Used to detect what changed since the last run.                                                          |
+| `vector_store/embedding.py`        | Wraps FastEmbed (`bge-small-en-v1.5`, 384-dim vectors) — loads the model from the committed `fastembed_cache/`, no network call needed.                                    |
+| `vector_store/qdrant_store.py`     | Saves, updates, and searches descriptions in the local Qdrant vector database. Embeds a context-prefixed string (`source_db > table.column: description`), not just the raw description, so identity is part of the vector, not only the payload. The vector store always holds the latest approved version. |
 | `ui/app.py`                        | The Streamlit entry point. Only handles page routing — no business logic here.                                                                                             |
-| `ui/pages/build_metadata.py`       | **Main working screen.** Select a database, generate AI descriptions, see them table by table, edit any description, save, and view the full change history at the bottom. |
-| `ui/pages/run_pipeline.py`         | Batch pipeline screen — runs all databases at once, shows step-by-step progress, downloads a summary CSV.                                                                  |
-| `ui/pages/review_metadata.py`      | Cross-database review screen — filter by database, domain, or status, approve or reject entries in bulk.                                                                   |
-| `ui/pages/manage_glossary.py`      | Add, edit, and delete business-term-to-column mappings. Changes save immediately to `glossary.json`.                                                                       |
+| `ui/pages/build_metadata.py`       | **Main working screen.** Select a database, generate AI descriptions, see them table by table, edit any description, export/import via Excel, save, and view the full change history at the bottom. |
+| `ui/pages/query.py`                | The **Query** screen. Calls into `rivdw_runtime/query_engine.py` for the actual search + SQL-drafting logic — this file only handles rendering.                            |
+| `../rivdw_runtime/query_engine.py` | Embeds the question, does a plain Qdrant top-5 search, asks Groq to draft one SQL query, and returns it for display only — it is never executed.                          |
+| `../rivdw_runtime/eval/`           | `golden_set.json` (hand-written test questions with expected tables/columns) + `run_eval.py` (retrieval-only Recall@K scoring, no LLM calls) — the yardstick for any future retrieval changes. |
