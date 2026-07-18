@@ -158,7 +158,7 @@ before — there's no point auto-executing SQL that was generated from unmeasure
 
 ## Research-backed ideas worth adopting
 
-We went through all 16 PDFs in `research_papers/` (3 already had notes in `Rearch_Papers_Summary.md`;
+We went through all 16 PDFs in `docs/` (3 already had notes in `docs/Rearch_Papers_Summary.md`;
 the other 13 were read fresh for this pass). Below is what's actually specific and cheap enough to
 build — not generic "use a better prompt" advice.
 
@@ -169,8 +169,8 @@ build — not generic "use a better prompt" advice.
    "United States"), junk placeholder values, ambiguous codes. RIVDW's crawler currently reads
    structure only. Pulling the top ~10 distinct values per column (plus null % and distinct count)
    and feeding that into the Groq prompt — the same "profiling" technique already noted in
-   `Rearch_Papers_Summary.md` from the metadata-extraction paper — would sharpen descriptions and
-   catch data-quality issues the guardian can't see today.
+   `docs/Rearch_Papers_Summary.md` from the metadata-extraction paper — would sharpen descriptions
+   and catch data-quality issues the guardian can't see today.
 2. **Flag join/foreign-key columns explicitly in metadata.** Multiple papers separately land on
    this: a missing or undocumented join key is one of the single biggest causes of text-to-SQL
    failure (11.6% in one paper). RIVDW's descriptions already have a `related_tables` field — worth
@@ -211,7 +211,7 @@ over an almost-complete reference architecture:
    high agreement auto-answers, low agreement routes to a human. This extends RIVDW's existing
    review culture (from the Build Metadata screen) into runtime instead of always trusting the first
    generated query.
-10. **Reuse approved past queries.** Already scoped in `Rearch_Papers_Summary.md` as the "Trajectory
+10. **Reuse approved past queries.** Already scoped in `docs/Rearch_Papers_Summary.md` as the "Trajectory
     Builder" idea: store question + SQL + reasoning once a human approves it, and use it to help
     answer similar future questions. Pinterest's blog independently reaches the same conclusion from
     mining historical query logs, which reinforces that it's worth building.
@@ -235,7 +235,7 @@ over an almost-complete reference architecture:
 
 ## Our accurate-retrieval design (the target end-state, built in the phases above)
 
-`Embeddings_BestPractise.md` lays out 14 separate retrieval/embedding techniques and judges each
+`docs/Embeddings_BestPractise.md` lays out 14 separate retrieval/embedding techniques and judges each
 one against RIVDW individually. This section combines the ones that survived that judgment into
 **a single retrieval pipeline** — described here as one flow rather than a list of independent
 choices. It is _not_ what gets built on day one: the "Runtime build plan" section above is the
