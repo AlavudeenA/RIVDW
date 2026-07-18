@@ -59,8 +59,11 @@ class QdrantStore:
         return embed_single(text)
 
     def save_entry(self, entry: MetadataEntry) -> None:
-        """Upsert one MetadataEntry into the vector store using its description as the embed text."""
-        parts = [entry.description or f"{entry.table_name} {entry.column_name}"]
+        """Upsert one MetadataEntry into the vector store, embedding a context-prefixed description
+        so the vector captures which database/table/column it belongs to, not just the prose."""
+        location = entry.table_name if entry.is_table_entry() else f"{entry.table_name}.{entry.column_name}"
+        body = entry.description or location
+        parts = [f"{entry.source_db} > {location}: {body}"]
         if entry.human_notes:
             parts.append(entry.human_notes)
         embed_text = " ".join(parts)
@@ -122,15 +125,15 @@ class QdrantStore:
 
         qdrant_filter = _build_filter(filters) if filters else None
 
-        results = self._client.search(
+        response = self._client.query_points(
             collection_name=self._collection_name,
-            query_vector=query_vector,
+            query=query_vector,
             query_filter=qdrant_filter,
             limit=limit,
             with_payload=True,
         )
 
-        return [{"score": hit.score, **hit.payload} for hit in results]
+        return [{"score": hit.score, **hit.payload} for hit in response.points]
 
     def get_all_entries(
         self,

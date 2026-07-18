@@ -13,7 +13,7 @@ cp .env.example .env
 # Edit .env — fill in your Groq API key and database connection details
 
 # 3. Run the app
-streamlit run ui/app.py
+python -m streamlit run ui/app.py
 ```
 
 ## What This System Does

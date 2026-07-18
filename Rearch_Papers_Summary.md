@@ -1,193 +1,165 @@
-# Report Intelligence Virtual DW — Build-Time Metadata Ingestion System
+## Research Paper - Automatic Metadata Extraction for Text-to-SQL:
 
-## Prompt for Claude in VS Code
+The hardest part of writing SQL is not the SQL itself — it is understanding what is actually in the database.
+They list the exact problems you face in WBRS too:
 
----
+No documentation — column names like no_ltr_dt or cds_code with no explanation anywhere
+Outdated documentation — someone documented the table three years ago, the schema changed, nobody updated the docs
+Unclear data formats — is a name stored as "Smith John" or "John Smith" or "JOHN SMITH"?
+Multiple formats in one column — half the rows use one format, half use another
+Multiple date columns — four date fields in one table, which one do you use for "sign up date"?
+Complex joins — two tables need to join on IMEI but one has 13 digits and the other has 14, with a "1" prefix. Took them a long time to discover that
+Default values — telephone number field with 10% of rows containing "123-456-7890" as a placeholder. If you join on this you get billions of garbage rows
 
-## What we are building
+They then say: we built a system to automatically extract metadata to solve these problems, and it got us to #1 on the BIRD benchmark (the hardest text-to-SQL test in the world) — without using any hints or custom-tuned models, just GPT-4o.
 
-Build-time: Vector Metadata Ingestion (1/2)
-How schema metadata is extracted, enriched and reviewed before entering the vector store
-Flow:
+Pages 2-3 — Database profiling (their first technique)
+Profiling means: connect to a database, read a sample of the actual data, and compute statistics about each column. Not reading it for business use — reading it to understand what kind of data lives there.
+Statistics they collect per column:
 
-Source Databases (parallel):
-SQL Server DB1 (Compliance)
-SQL Server DB2 (ATTEST)
-Oracle DB3 (GPS)
-SQL Server DB4...DBn
+How many rows are NULL vs filled
+How many distinct values exist
+Min and max values
+Most common values (top 10)
+Character patterns (always 14 digits? Always uppercase?)
+A minhash sketch — a mathematical fingerprint of the column's values
 
-↓ Connection Registry (YAML/Config)
-(DB type • host • credentials • domain tag • owner)
-↓ Schema Crawlers
-SQL Server → sys.tables / sys.columns
-Oracle → ALL_TAB_COLUMNS
-Extensible for any JDBC/ODBC source
+The minhash sketch is the clever bit. It lets you quickly find two columns that contain similar values — which tells you they might be joinable. If table_A.customer_id and table_B.cust_num both contain the same set of numbers, the minhash similarity will be high, which suggests these should be joined even if nobody documented it.
+They then feed this profiling output to the LLM and ask it to write a plain-English description of what the column contains. Example:
+Raw profile: CDSCode, 14 characters long, always numeric, sample values 01100170109835…
+LLM produces: "The CDSCode column stores unique 14-character numeric identifiers for each school, where CDS stands for County-District-School."
 
-→ Metadata Normalizer Agent
-(Merges crawl output into unified schema format • source DB tagged on every entry • ready for enrichment)
-→ Incremental Diff Engine
-(Skip Unchanged Entries)
-↓ LLM Metadata Enrichment Agent
-(Generates plain-English description per table/column • Adds domain tag • usage context • cross-source relationships)
-
-Build-time: Vector Metadata Ingestion (2/2)
-Human review, Metadata Guardian validation, and final write to the vector store
-Flow:
-
-LLM Metadata Enrichment Agent output flows into Domain Expert Review
-
-Main Path:
-
-Domain Expert Review (Human)
-Confirms descriptions are business-accurate
-Corrects domain tags
-Validates cross-source relationships
-Flags LLM misinterpretations
-
-Domain Glossary (Human Curated Pre-Defined Business Terms)
-↓ Metadata Guardian Agent
-Checks:
-Description present and meaningful?
-Domain tag assigned?
-Source DB tagged?
-No ambiguous column names?
-Simple fail → LLM re-enriches automatically
-Complex fail → escalate to human resolve
-
-Approved ↓
-Vector Metadata Store
-(Quality-gated • human-verified • source-tagged • domain-tagged • ready for retrieval)
-
-Loops:
-
-Correct + re-enrich (back to LLM)
-Fix and re-enrich
-Scheduled re-ingestion on schema change
-
-Runtime: User Query Flow (1/3)
-User query enters the system. LLM extracts intent. Cache and vector store checked simultaneously
-Flow:
-
-User (Natural Language Query)
-(Role + department captured on login)
-↓ LLM Orchestration Agent
-(Intent extraction • schema routing • query planning • multi-source detection • role context)
-Branches (parallel):
-Vector Metadata Store (Semantic search → returns top matches + confidence score)
-Approved Query Cache (Exact + semantic embedding match check)
-
-Search Resolution Agent (if needed from Vector Store)
-Score ≥ threshold → pass through
-Synonym expansion + re-search
-Ask user: which domain?
-Surface top 3 tables to confirm
-
-Cache Resolution Agent (if match in cache)
-Detects parameter drift (date/dept/threshold)
-Params match → execute cached SQL directly
-Param drift → adjust SQL then execute
-
-Runtime: User Query Flow (2/3)
-SQL generation • Query Guardian validation • approval and cache write
-Flow (continued from previous agents):
-
-Text-to-SQL Generation Agent
-(LLM generates SQL from enriched metadata context • Schema-aware • Read-only enforced • Row-level security parameters injected)
-↓ Query Guardian Agent
-Checks:
-SELECT-only (no writes/drops)
-Role permissions validated
-Row limits enforced
-Tables within user scope?
-Auto-approve / Auto-reject + reason
-Escalate if ambiguous
-Separate critic model — never validates its own generated SQL
-Every decision logged for audit trail
-
-Decisions:
-Reject / Regenerate (loop back)
-Approved ↓
-
-Approved → Write to Cache
-(Query • user role • department • tables touched • source DBs • timestamp • confidence score)
-↓ Source Routing Decision
-Single source? → direct execution
-Multi-source detected? → Federation Agent
-
-Runtime: User Query Flow (3/3)
-Federation Agent • virtual staging • composition engine • secure execution • results
-Flow:
-Two Paths:
-A. Single Source Path (Direct Execution)
-B. Multi-source Path (Federation Agent)
-Federation Agent:
-
-Identifies DBs needed via connection registry
-Decomposes into per-DB sub-queries
-Dispatch in parallel — each on its own connection
-Collect results → stage in virtual layer
-
-Common Steps:
-
-Secure Query Execution
-(Runs against source DBs • Enforces ACL • Allow Only Select • Query Validation)
-Virtual Data Warehouse Layer (on-demand • session-scoped • in-memory)
-(Collected result sets from each DB stored temporarily • No permanent storage • Cleared after response • Source-tagged • ready for cross join)
-Composition Query Engine
-(Runs final query across staged result sets • Joins • Aggregates • Filters • Formats for report)
-Results Delivered to User
-(Table • chart • export • feedback thumbs up/down • logged to usage intelligence store)
+Useful tips to generate query:
+It is better to save Question-SQL pairs once result is verified with user and Text-to-SQL works much better when you give the LLM examples of similar question-SQL pairs.
 
 ---
 
-## What design and architecture principle you have to follow when you generate code
+## 2503.18596v4
 
-1. Use simple, real-world words like sendEmail() and InvoiceCalculator. If a name needs "and" (e.g., validateAndSave), that's a sign you're doing too many things in one place.
+Your Search Resolution Agent needs query rewriting. When the confidence score is below threshold, do not just do synonym expansion — use the LLM to analyse what was retrieved, infer what might be missing, rewrite the question to find it, and search again.
 
-2: Give every piece exactly one job
-Each method should do one thing well. Each class should represent a single concept or actor. Each file should contain one logical unit — never mix helpers, data, and UI in one file.
+Your Search Resolution Agent's step 3 (surface top 3 tables) should use a two-agent debate pattern rather than just returning raw vector results. A Data Analyst agent and a Database Expert agent debating the answer produces far more reliable table selection than a single ranking.
 
-3: Prioritize predictability over cleverness
-Write code that reads like clear prose, not a puzzle. Following the first two steps ensures any developer can understand intent instantly, and every component has only one reason to change.
-
-4. Small, focused pieces make the system scalable and easy to understand — because you can change one thing without breaking everything else.
+Error 4 is particularly relevant for your join generation. Missing a join key column is responsible for 11.6% of all failures. Your enriched metadata needs to explicitly document join relationships between tables — not just what each column means in isolation.
 
 ---
 
----
+## 2601.15709v1
 
-## Tech Stack
+# Trajectory Builder:
 
-Core Stack
-Layer Technology
-UI Streamlit 1.45.0
-Pipeline Orchestration LangGraph (Python)
-LLM Provider Groq API (flag-based model selection and model slots)
-LLM Fallback VS Code LM API
-Vector Store Local Qdrant (file-based)
-Embeddings FastEmbed using BAAI/bge-base-en-v1.5
-Relational Store SQLite (sqlite3)
-Database Access SQLAlchemy
-Configuration Pydantic + pydantic-settings + python-dotenv
-Data Validation Pydantic
-Architecture Requirements
-Build the application as a modular Python project.
-Use LangGraph to orchestrate all workflows and agent execution.
-Route all primary LLM requests through the Groq API.
-Implement automatic fallback to VS Code LM API when Groq is turned off. Refer this how to implement it C:\Users\alavu\source\repos\structured-data-search-engine\vscode-lm-extension\src\extension.ts
-Store vector embeddings in a local Qdrant instance.
-Generate embeddings locally using FastEmbed and BAAI/bge-base-en-v1.5.
-Use SQLite as the primary relational database for:
-Registry data
-Glossary data
-Run history
-Application metadata
-Access SQLite through SQLAlchemy ORM.
-Manage all configuration through:
-Pydantic models
-pydantic-settings
-.env files
-Use Pydantic models for all request, response, and internal data validation.
-The above tech stack is the right choice, in case something contradics prefer these tech stack I mentioned here in Tech Stack section
+An admin types or selects a business question
+The LLM generates the SQL and also explains its reasoning — which tables it chose, why, what join path it used
+The admin reviews, corrects if needed, approves
+The approved result (question + SQL + reasoning) gets stored
+When a real user asks a question later, this stored knowledge is used to help generate better SQL.
+This entire paper validates the value of reusing past successful queries rather than regenerating from scratch every time. Right now your cache stores: query text, SQL, tables used, timestamp. Adding a brief structured note about why those tables were chosen and what join path was used would help the SQL generation agent make better use of cached entries when handling similar-but-not-identical questions.
 
----
+# What it should look like
+
+Screen — Trajectory Builder (sits alongside your existing screens)
+
+Input section: Admin types a business question in plain English
+Generate button: LLM generates SQL + fills in the reasoning fields automatically
+Review section: Admin sees and can edit:
+
+The generated SQL (editable)
+Tables chosen (editable list)
+Why these tables (editable text)
+Join path (editable)
+Tricky parts or caveats (editable)
+
+# One practical concern worth flagging
+
+Trajectories can go stale. If a column gets renamed or a table gets restructured, the SQL in an approved trajectory might break. You need a simple staleness check:
+
+When the schema crawler detects a change to a table that appears in a trajectory's tables_used list, automatically flag that trajectory as needs_review in Qdrant
+The trajectory screen shows a "Stale trajectories" filter so the admin can review and update them
+
+Test button: Actually runs the SQL against the source DB and shows a preview of results so admin can verify it is correct
+Approve & Store button: Saves to the Qdrant collection with entry_type: approved_trajectory
+Browse existing trajectories: A searchable table of all approved trajectories with edit and delete
+
+# What the trajectory entry should look like
+
+{
+"entry_type": "approved_trajectory",
+"id": "uuid",
+"question": "Show me employees terminated in Q1 2025 not processed in PIP",
+"domain": "compliance",
+"approved_by": "admin@wf.com",
+"approved_at": "2025-01-15T09:00:00",
+
+"reasoning": {
+"tables_chosen": ["pip_violations", "emp_master"],
+"why_these_tables": "pip_violations holds the compliance status per employee. emp_master holds current employment status including termination date. Join is needed to correlate termination with PIP processing status.",
+"join_path": "pip_violations.emp_id = emp_master.emp_id",
+"filters_applied": "termination_date between Q1 dates, pip_processed = false",
+"tricky_parts": "emp_master has multiple date fields — use termination_date not separation_date which is for voluntary leavers"
+},
+
+"sql": "SELECT e.emp_id, e.emp_name, e.termination_date FROM emp_master e LEFT JOIN pip_violations p ON p.emp_id = e.emp_id WHERE e.termination_date BETWEEN '2025-01-01' AND '2025-03-31' AND p.pip_processed = 0",
+
+"source_dbs": ["DB_COMPLIANCE"],
+"tables_used": ["pip_violations", "emp_master"],
+"sensitivity_tier": "high",
+"ttl_hours": 24
+}
+
+Step 1 — Schema metadata search
+
+# Convert user question to a vector embedding
+
+user_question = "Which terminated employees were not processed in PIP this quarter?"
+question_vector = fastembed.embed(user_question)
+
+# Search Qdrant — only look at schema metadata entries
+
+schema_results = qdrant_client.search(
+collection_name="rivdw_metadata",
+query_vector=question_vector,
+query_filter=Filter(
+must=[FieldCondition(
+key="entry_type",
+match=MatchValue(value="schema_metadata")
+)]
+),
+limit=10 # top 10 most relevant schema entries
+)
+
+Step 2 — Trajectory search
+
+# Same question vector, same collection
+
+# But now filter to only approved_trajectory entries
+
+trajectory_results = qdrant_client.search(
+collection_name="rivdw_metadata",
+query_vector=question_vector,
+query_filter=Filter(
+must=[FieldCondition(
+key="entry_type",
+match=MatchValue(value="approved_trajectory")
+)]
+),
+limit=3 # top 3 most similar past questions
+)
+
+Step 3 — Combining into one context block
+context = f"""
+
+## Relevant database schema
+
+{format_schema_results(schema_results)}
+
+## Similar questions answered before
+
+{format_trajectory_results(trajectory_results)}
+
+## User question
+
+{user_question}
+
+Generate SQL to answer the user question using the schema and
+prior examples above as context.
+"""

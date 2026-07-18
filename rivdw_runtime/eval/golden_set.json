@@ -1,0 +1,152 @@
+[
+  {
+    "question": "Which trade requests are still pending approval?",
+    "source_db": "compliance_db",
+    "expected_tables": ["traderequest"],
+    "expected_columns": ["status"]
+  },
+  {
+    "question": "Show me all compliance alerts that haven't been resolved yet",
+    "source_db": "compliance_db",
+    "expected_tables": ["compliancealert"],
+    "expected_columns": ["status", "resolveddate"]
+  },
+  {
+    "question": "Which securities are currently restricted from trading?",
+    "source_db": "compliance_db",
+    "expected_tables": ["restrictedsecurity"],
+    "expected_columns": ["securitysymbol", "restrictiontype"]
+  },
+  {
+    "question": "List broker-dealers registered in a specific country",
+    "source_db": "compliance_db",
+    "expected_tables": ["brokerdealer"],
+    "expected_columns": ["country"]
+  },
+  {
+    "question": "What was the decision on the approval workflow for a given trade request?",
+    "source_db": "compliance_db",
+    "expected_tables": ["approvalworkflow"],
+    "expected_columns": ["decision", "traderequestid"]
+  },
+  {
+    "question": "How long does it typically take to review a trade request, on average?",
+    "source_db": "compliance_db",
+    "expected_tables": ["approvalworkflow"],
+    "expected_columns": ["turnarounddays"]
+  },
+  {
+    "question": "Which employees work in the compliance department?",
+    "source_db": "compliance_db",
+    "expected_tables": ["employee"],
+    "expected_columns": ["department"]
+  },
+  {
+    "question": "Show accounts that were opened last quarter",
+    "source_db": "compliance_db",
+    "expected_tables": ["account"],
+    "expected_columns": ["opendate"]
+  },
+  {
+    "question": "What is the severity level of each compliance alert?",
+    "source_db": "compliance_db",
+    "expected_tables": ["compliancealert"],
+    "expected_columns": ["severity"]
+  },
+  {
+    "question": "List every broker-dealer's registration number",
+    "source_db": "compliance_db",
+    "expected_tables": ["brokerdealer"],
+    "expected_columns": ["registrationnumber"]
+  },
+  {
+    "question": "Which trade requests were rejected during approval?",
+    "source_db": "compliance_db",
+    "expected_tables": ["approvalworkflow", "traderequest"],
+    "expected_columns": ["decision", "status"]
+  },
+  {
+    "question": "Show restricted securities whose restriction has already expired",
+    "source_db": "compliance_db",
+    "expected_tables": ["restrictedsecurity"],
+    "expected_columns": ["enddate"]
+  },
+  {
+    "question": "Who reviewed each trade request's approval workflow?",
+    "source_db": "compliance_db",
+    "expected_tables": ["approvalworkflow"],
+    "expected_columns": ["reviewerid"]
+  },
+  {
+    "question": "What account types do we offer?",
+    "source_db": "compliance_db",
+    "expected_tables": ["account"],
+    "expected_columns": ["accounttype"]
+  },
+  {
+    "question": "Show me all active employees",
+    "source_db": "compliance_db",
+    "expected_tables": ["employee"],
+    "expected_columns": ["status"]
+  },
+  {
+    "question": "Which compliance alerts are linked to a trade request?",
+    "source_db": "compliance_db",
+    "expected_tables": ["compliancealert"],
+    "expected_columns": ["traderequestid"]
+  },
+  {
+    "question": "What is each employee's job title?",
+    "source_db": "compliance_db",
+    "expected_tables": ["employee"],
+    "expected_columns": ["jobtitle"]
+  },
+  {
+    "question": "Show all buy-side trade requests",
+    "source_db": "compliance_db",
+    "expected_tables": ["traderequest"],
+    "expected_columns": ["tradetype"]
+  },
+  {
+    "question": "Which accounts are managed by a specific employee?",
+    "source_db": "compliance_db",
+    "expected_tables": ["account"],
+    "expected_columns": ["employeeid"]
+  },
+  {
+    "question": "What was the reason a security's trading was restricted?",
+    "source_db": "compliance_db",
+    "expected_tables": ["restrictedsecurity"],
+    "expected_columns": ["reason", "securitysymbol"]
+  },
+  {
+    "question": "When was each employee hired?",
+    "source_db": "compliance_db",
+    "expected_tables": ["employee"],
+    "expected_columns": ["hiredate"]
+  },
+  {
+    "question": "Which broker-dealer is each account associated with?",
+    "source_db": "compliance_db",
+    "expected_tables": ["account"],
+    "expected_columns": ["brokerdealerid"]
+  },
+  {
+    "question": "What comments were left during a trade request's review process?",
+    "source_db": "compliance_db",
+    "expected_tables": ["approvalworkflow"],
+    "expected_columns": ["comments"]
+  },
+  {
+    "question": "Show trade requests for a specific share quantity",
+    "source_db": "compliance_db",
+    "expected_tables": ["traderequest"],
+    "expected_columns": ["quantity"]
+  },
+  {
+    "question": "Which employee submitted each trade request?",
+    "source_db": "compliance_db",
+    "expected_tables": ["traderequest"],
+    "expected_columns": ["employeeid"]
+  }
+]
