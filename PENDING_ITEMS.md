@@ -54,19 +54,38 @@ even before, the Phase 2 accuracy layers.
 ## Runtime Phase 2 — accuracy layers (retrieval-side)
 
 Build-time's one planned change (the context-prefixed embedding, Step 1) is already done. These
-five are the retrieval-side layers from "Our accurate-retrieval design," to be added **one at a
-time**, each re-measured against the Phase 0 golden eval set (`rivdw_runtime/eval/`), kept only if
-it measurably raises Recall@K:
+seven are the layers from "Our accurate-retrieval design," to be added **one at a time**, each
+re-measured against the Phase 0 golden eval set (`rivdw_runtime/eval/`), kept only if it measurably
+raises Recall@K:
 
+- [ ] **Embed representative example questions per table** (Step 1b, build-time) — generate a
+      handful of plain-English example questions per table and embed them alongside the
+      description, so a real question can match against *other questions* instead of only a formal
+      description (query-to-query matching tends to beat query-to-description matching — research
+      item #6). Validate the generated example questions via **human review** in the existing Build
+      Metadata screen (same pattern already used for descriptions), not by running them as real
+      SQL — SQL execution is Phase 3 and doesn't exist yet, so this stays a Phase-2-only change with
+      no hidden dependency on Phase 3.
 - [ ] **HyDE query rewriting** (Step 2) — before searching, have the LLM draft a hypothetical
       answer to the question and embed that instead of the raw question.
-- [ ] **Hybrid dense + BM25 search with RRF fusion** (Step 3) — run a keyword search alongside the
-      vector search and merge the two ranked lists, so exact codes/IDs/abbreviations aren't missed.
+- [ ] **Hybrid dense + BM25 + AI-native schema-linking search, merged with RRF fusion** (Step 3) —
+      run a keyword search *and* a direct "ask the LLM what it would look for" search alongside the
+      vector search, then merge all three ranked lists. The keyword channel catches exact
+      codes/IDs/abbreviations the vector search misses; the AI-native channel (research item #7's
+      "asking the LLM directly" + "draft SQL first and see what schema it used," merged into one
+      signal here) catches the different case where the question's phrasing doesn't share meaning
+      *or* exact words with the stored text at all (e.g. "how long does review take" vs. the stored
+      `turnarounddays` column — the one known miss in the current golden eval).
 - [ ] **Cross-encoder reranking** (Step 4) — re-score the merged shortlist with a slower, more
       careful model before returning the final top results. Flagged as the single highest-leverage
       accuracy step in the source research.
-- [ ] **Parent/child expansion** (Step 5) — when a column entry matches, pull in its sibling
-      table-level entry (and vice versa) before handing context to the LLM.
+- [ ] **Parent/child + relational-closure expansion** (Step 5) — when a column entry matches, pull
+      in its sibling table-level entry (and vice versa) before handing context to the LLM. Extended
+      to also auto-include any *other* table connected via a foreign key (research item #7's
+      "relational closure" piece), using join keys explicitly flagged in metadata (research item
+      #2) — which first requires extending the enrichment prompt to ask "is this a join key, and to
+      what other table/column?" (a cheap, build-time-only prompt change, not gated on any other
+      Phase 2 step).
 - [ ] **Trust-based tie-breaking** (Step 6) — prefer `human_verified: true` / `guardian_status:
       approved` entries over LLM-only `pending` ones at equal similarity. Also covers research item
       #4 ("governance-aware ranking").
@@ -95,11 +114,10 @@ unverified retrieval.
 ## Build-time pipeline upgrades (not yet scheduled into a phase)
 
 Cheap, build-time-only improvements from the research pass that aren't part of the runtime phases
-above:
+above. (Research item #2, "flag join/foreign-key columns," was originally listed here too, but has
+since been folded into Phase 2's parent/child + relational-closure expansion above — see that item
+for the current plan.)
 
-- [ ] **Flag join/foreign-key columns explicitly in metadata** (research item #2) — make the
-      enrichment prompt explicitly ask "is this a join key, and to what other table/column?"
-      instead of leaving it implicit in `related_tables`.
 - [ ] **Mine a synonym/glossary layer across DB types** (research item #3) — resurrect the
       glossary feature from the original design (dead/empty `glossary/` and `glossary_data/`
       folders currently sit unused in `rivdw_buildtime/`) and feed it into the enrichment prompt so
@@ -110,17 +128,12 @@ above:
 ## Runtime architecture ideas not yet scheduled into a phase
 
 From the research "Blueprint for the runtime phase" — directionally agreed as good ideas, but not
-yet slotted into Phase 2/3 above:
+yet slotted into Phase 2/3 above. (Research item #6, "embed example questions per table," was
+originally listed here too, but has since been scheduled into Phase 2 above, with SQL-execution
+validation swapped for human review since Phase 3 doesn't exist yet.)
 
 - [ ] **Two-stage retrieval: pick the database first, then the tables** (research item #5) — with
       multiple source databases, rank which database is relevant before drilling into its tables.
-- [ ] **Embed example questions per table** (research item #6) — generate a handful of
-      representative plain-English questions per table (validated against real SQL) and embed
-      those alongside the description, so query-to-query matching can beat query-to-description
-      matching.
-- [ ] **Hybrid schema linking with relational closure** (research item #7) — combine direct LLM
-      linking, "draft SQL first and see what schema it used," and value-based matching, then
-      auto-include any FK-connected table so joins stay possible.
 
 ---
 
@@ -130,6 +143,10 @@ yet slotted into Phase 2/3 above:
       description quality, but means sending real production data (compliance/HR/brokerage) to a
       third-party LLM API. **Blocked on an explicit data-governance yes/no from whoever owns that
       call** — not to be built on a default-on assumption just because the research recommends it.
+- [ ] **Value-based schema matching** (the remaining third of research item #7, "hybrid schema
+      linking" — the other two-thirds are scheduled into Phase 2's Step 3 above) — matching a
+      question against actual stored column *values*, not just structure. Blocked on the exact same
+      governance decision as the item above, since it needs the same real column data.
 
 ---
 

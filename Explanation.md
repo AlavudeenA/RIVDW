@@ -1,11 +1,10 @@
 # RIVDW, Explained From Zero
 
 This document assumes you just walked in with a computer science degree and nothing else — no
-prior context on this project, no assumption you've used any of the tools mentioned. It's written
-as one continuous story, start to end: what the problem is, what's been built to solve it, how
-each piece works, and what's still left to do. Every technical term is explained in **[square
-brackets]** the very first time it shows up, so you never have to stop and look something up
-elsewhere.
+prior context on this project, no assumption you've used any of the tools mentioned. It covers two
+things only: what's actually built and working right now, explained plainly, and what's planned
+next. Every technical term is explained in **[square brackets]** the very first time it shows up,
+so you never have to stop and look something up elsewhere.
 
 Read it top to bottom once. After that, use it as a reference.
 
@@ -16,7 +15,8 @@ Read it top to bottom once. After that, use it as a reference.
 Imagine a company has several databases — say a compliance database, maybe an HR database, maybe
 a sales database. Each one has dozens of tables, each table has dozens of columns, and the names
 are usually cryptic to a normal business person: `TRDREQ`, `CDSCode`, `apprvl_wf`. To get an answer
-out of these databases today, you need someone who knows SQL, e.g. "SELECT * FROM Employees WHERE ..."]\*\* *and\* who
+out of these databases today, you need someone who knows SQL **[Structured Query Language — the
+language used to ask a database questions, e.g. "SELECT * FROM Employees WHERE ..."]** *and* who
 happens to know what all those cryptic table/column names actually mean.
 
 RIVDW stands for **Report Intelligence Virtual DW** (DW = **Data Warehouse**, a database built for
@@ -26,9 +26,9 @@ out, entirely on its own, which tables and columns hold that answer, and writes 
 them — without that user ever needing to know a table name or a line of SQL.
 
 This is a **RAG** system. RAG stands for **Retrieval-Augmented Generation** — instead of asking an
-AI model to answer, first _retrieve_ the relevant facts from a trusted
-source, and only then ask the AI to _generate_ an answer using strictly those retrieved facts. Here,
-the "facts" are descriptions of what each database table and column actually means.
+AI model to answer a question purely from memory, first _retrieve_ the relevant facts from a
+trusted source, and only then ask the AI to _generate_ an answer using strictly those retrieved
+facts. Here, the "facts" are descriptions of what each database table and column actually means.
 
 To make RAG work here, the project is split into two halves that run at completely different
 times:
@@ -56,18 +56,19 @@ detail, then the plan for what comes next.
 Before walking through the code, here's what each piece of technology is and why it was chosen.
 You don't need deep expertise in any of these — just enough to follow the rest of the document.
 
-- **Groq** — Chosen for making LLM Calls with `temperature=0.2` — temperature is a setting from 0 to 1 that controls how
-  random/creative the AI's wording is; low values like 0.2 favor consistent, predictable output,
-  which matters more for something like a data dictionary (where you want the same kind of answer
-  every time) than it would for creative writing.
+- **Groq** — the AI service this project calls to run its language-model queries. An **LLM**
+  **[Large Language Model — an AI model trained on huge amounts of text that can read, write, and
+  reason about natural language]** call here always uses `temperature=0.2` — a setting from 0 to 1
+  controlling how random/creative the wording is; a low value like this favors consistent,
+  predictable output, which matters more for a data dictionary than it would for creative writing.
 
-- **Qdrant** — a vector database **[a database purpose-built to store embeddings
+- **Qdrant** — a vector database **[a database purpose-built to store embeddings (explained next)
   and quickly find the ones most similar to a new one — effectively a search engine that searches
   by meaning instead of by exact keyword match]**. It runs locally here, as plain files on disk —
   there's no separate server process to start or manage.
 
 - **Embeddings** — a way of converting a piece of text into a list of numbers (in this project,
-  384 dim numbers) such that texts with _similar meaning_ end up with _similar numbers_, even if the
+  384 numbers) such that texts with _similar meaning_ end up with _similar numbers_, even if the
   actual words used are completely different. This is what makes "meaning-based search" possible:
   you convert everything you want to search over into these number-lists once, and then a new
   question, also converted into a number-list, can be compared against all of them mathematically
@@ -79,7 +80,8 @@ You don't need deep expertise in any of these — just enough to follow the rest
   you clone this project onto a brand-new machine, it works completely offline, with no wait for a
   first-time model download.
 
-- **SQLAlchemy** — a Python library for talking to databases from Python code,
+- **SQLAlchemy** — a Python library **[library = a pre-written piece of code you can import and
+  reuse instead of writing everything from scratch]** for talking to databases from Python code,
   used here to connect (read-only) to SQL Server and Oracle databases.
 
 - **SQLite** — a lightweight, file-based database that needs no separate server to run, used here
@@ -89,8 +91,9 @@ You don't need deep expertise in any of these — just enough to follow the rest
   separate front-end (browser-side) and back-end (server-side) code by hand. This is what the
   actual app you open in your browser is built with.
 
-None of the databases RIVDW connects to for real business data but only the _structure_ — the list of tables, the list of
-columns, and their data types — is ever read from those systems.
+None of the databases RIVDW connects to ever have their actual business data read — only the
+_structure_ (the list of tables, the list of columns, and their data types) is ever read from those
+systems.
 
 ---
 
@@ -120,16 +123,15 @@ keeps things fast and cheap), using a prompt template stored in `config/strings.
 that holds _all_ the UI text and AI prompt wording in the whole project — handy, because it means
 anyone wanting to change what gets shown or asked doesn't need to go hunting through code). The
 actual call to Groq happens in `pipeline/nodes/enrich_node.py`, at that low `temperature=0.2`
-setting described above, and again demands a JSON-only reply.
+setting described above, and demands a JSON-only reply.
 
 Real AI models don't always perfectly follow "respond with JSON only" — sometimes they wrap the
-answer in markdown code fences **[the triple-backtick blocks like\
-&#96;&#96;&#96;json ... &#96;&#96;&#96;\
-that are normally used to format code nicely for humans reading Markdown text]**, or add a stray
-sentence before or after the JSON. To handle this without crashing, there's a three-step fallback
-parser: try to parse the reply as JSON directly; if that fails, strip out any markdown code fences
-and try again; if _that_ fails, search the text for the first `{...}` block and try to parse just
-that. Only if all three attempts fail does it actually give up.
+answer in markdown code fences **[blocks normally used to format code nicely when rendering
+Markdown text, recognizable by the triple-backtick marks around them]**, or add a stray sentence
+before or after the JSON. To handle this without crashing, there's a three-step fallback parser:
+try to parse the reply as JSON directly; if that fails, strip out any markdown code fences and try
+again; if _that_ fails, search the text for the first `{...}` block and try to parse just that.
+Only if all three attempts fail does it actually give up.
 
 ### Step 3 — Check the AI's work with a "guardian"
 
@@ -190,10 +192,10 @@ back who changed a description, when, and what it used to say.
 
 The Streamlit app has two navigation entries:
 
-| Screen             | What you can do there                                                                                                                                                                                                                                                                 |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Screen | What you can do there |
+|---|---|
 | **Build Metadata** | The main screen. Pick a database, click Generate, watch the AI describe each table live, edit any description by hand right in the browser, save your edits, export the whole thing to an Excel file, re-import an edited Excel file back in, and browse the complete change history. |
-| **Query**          | Type a plain-English question, get back the tables/columns the system thinks are relevant, a short explanation, and one drafted SQL query — this is the runtime half, covered in the next section.                                                                                    |
+| **Query** | Type a plain-English question, get back the tables/columns the system thinks are relevant, a short explanation, and one drafted SQL query — this is the runtime half, covered in the next section. |
 
 ### Human-in-the-loop: people stay in control
 
@@ -211,42 +213,26 @@ build-time in a few concrete ways:
 - Every save, edit, or regeneration gets timestamped and archived in that append-only history
   table, so there's always an audit trail of who changed what and when.
 
-Two screens described in an earlier design document — "Review Metadata" and "Manage Glossary" —
-were planned at one point but **do not exist** in the app as it's actually built today. There's
-also no glossary storage or UI in this version (the empty `glossary/` and `glossary_data/` folders
-in the code are leftover placeholders from that earlier plan, currently unused).
+Two screens sometimes mentioned in project notes — "Review Metadata" and "Manage Glossary" — don't
+exist in the app today, and there's no glossary storage or UI either; the `glossary/` and
+`glossary_data/` folders in the code sit empty and unused (see section 6 for the plan to eventually
+put them to use).
 
 ---
 
 ## 4. Runtime, in detail: answering a real question
 
-This is the newer half of the project. It's built in deliberate stages, and as of today, **two of
-four planned stages are done**. The reasoning behind building it in stages (rather than just
-building the "ideal" final version straight away) is worth explaining up front, because it shapes
-everything else in this section.
+This is the newer half of the project. It's built in four deliberate stages, and as of today, **two
+of the four are done**. The operating principle behind the whole plan: nothing new gets added until
+the previous stage is built and has been measured against real test questions — so search only gets
+more advanced where actual testing shows it's needed, not on a guess.
 
-### Why build it in stages at all?
-
-An earlier attempt at this project tried to research and start building the _ideal_ search
-pipeline directly — advanced techniques explained further below — before anything simpler existed
-to compare it against. The problem: without a simpler baseline and a way to measure improvement,
-there was no way to actually tell whether any of those advanced pieces were making results _better_
-or not. It's entirely possible to add complexity that does nothing, or even makes things worse,
-and never notice.
-
-The rule adopted going forward: **nothing new gets added until the previous stage is working and
-has been measured against real test questions.** So the order got flipped: build the smallest
-possible version that works end-to-end first, prove it works, and only add accuracy improvements
-one at a time where actual measurement shows they're needed.
-
-This produced a four-stage plan, each stage a strict prerequisite for the next:
-
-| Stage       | Status     | What it does, in one line                                       | Can't start until      |
-| ----------- | ---------- | --------------------------------------------------------------- | ---------------------- |
-| **Phase 0** | ✅ Built   | Write the answer key: test questions with known-correct answers | — (comes first)        |
-| **Phase 1** | ✅ Built   | Build the smallest possible working version, start to finish    | Phase 0 exists         |
-| **Phase 2** | ⬜ Planned | Make the search step more accurate, one improvement at a time   | Phase 1 works          |
-| **Phase 3** | ⬜ Planned | Let the generated SQL actually run, with safety rails           | Phase 2 is trustworthy |
+| Stage | Status | What it does, in one line | Can't start until |
+|---|---|---|---|
+| **Phase 0** | ✅ Built | Write the answer key: test questions with known-correct answers | — (comes first) |
+| **Phase 1** | ✅ Built | Build the smallest possible working version, start to finish | Phase 0 exists |
+| **Phase 2** | ⬜ Planned | Make the search step more accurate, one improvement at a time | Phase 1 works |
+| **Phase 3** | ⬜ Planned | Let the generated SQL actually run, with safety rails | Phase 2 is trustworthy |
 
 ```
 Phase 0                Phase 1                    Phase 2                     Phase 3
@@ -270,22 +256,11 @@ The score it reports is called **Recall@5**: out of all 25 test questions, what 
 _correct_ answer show up somewhere in the search system's top-5 results. Higher is better; 100%
 means the correct answer was in the top 5 every single time.
 
-The current baseline (measured after a later embedding-model switch, discussed below): **Table
-Recall@5: 96% (24 out of 25), Column Recall@5: 96% (24 out of 25).** The one question it still
-misses is "how long does it typically take to review a trade request" — the system expects the
-`turnarounddays` column but the search currently surfaces `reviewdate` instead. This is a known,
-accepted gap, explicitly earmarked as something Phase 2's accuracy improvements (below) should fix,
-not something being chased right now with a special-case hack.
-
-Side note on that embedding model: build-time originally used a larger embedding model,
-`bge-base-en-v1.5` (which produces 768 numbers per piece of text, rather than 384). Table recall
-was 100% with that larger model. The project deliberately switched to the smaller
-`bge-small-en-v1.5` model to match a pattern already used successfully in another of the user's
-projects, accepting a small, expected accuracy trade-off in exchange for a smaller, faster,
-fully-offline-capable model. Switching embedding models required completely regenerating the
-vector store from scratch, since Qdrant fixes the size of the number-list per collection **[a
-named grouping of stored vectors in Qdrant, roughly analogous to a "table" in a normal database]**
-once it's created — you can't just swap in shorter vectors for the same collection.
+The current baseline: **Table Recall@5: 96% (24 out of 25), Column Recall@5: 96% (24 out of 25).**
+The one question it still misses is "how long does it typically take to review a trade request" —
+the system expects the `turnarounddays` column but the search currently surfaces `reviewdate`
+instead. This is a known, accepted gap, explicitly earmarked as something Phase 2's accuracy
+improvements (below) should fix, not something being chased right now with a special-case hack.
 
 ### Phase 1 — the walking skeleton (✅ built)
 
@@ -311,30 +286,19 @@ The full flow, step by step:
    looks like" — a suggestion for a human to review.
 
 This lives in `rivdw_runtime/query_engine.py`, and is wired into the Query screen
-(`rivdw_buildtime/ui/pages/query.py`) — the "Search logic coming soon" placeholder that previously
-sat there is gone. Two implementation details worth noting: the SQL-drafting call reuses the exact
-same `_call_llm()` function that build-time already uses for writing descriptions
-(`pipeline/nodes/enrich_node.py`), rather than duplicating a second Groq-calling implementation, and
-it parses Groq's reply using that same three-step JSON fallback pattern described in section 3
-(direct parse → strip markdown fences → extract the first `{...}` block).
-
-This has been verified end-to-end in an actual browser: typing a real question returns matched
-schema entries, a plain-English explanation, and a drafted SQL block, with no console errors.
+(`rivdw_buildtime/ui/pages/query.py`). Two implementation details worth noting: the SQL-drafting
+call reuses the exact same `_call_llm()` function that build-time already uses for writing
+descriptions (`pipeline/nodes/enrich_node.py`), rather than duplicating a second Groq-calling
+implementation, and it parses Groq's reply using that same three-step JSON fallback pattern
+described in section 3 (direct parse → strip markdown fences → extract the first `{...}` block).
+This flow has been verified end-to-end in a real browser: typing a question returns matched schema
+entries, a plain-English explanation, and a drafted SQL block.
 
 **Deliberately left out of Phase 1, on purpose:** HyDE, hybrid/keyword search, reranking,
 parent/child expansion, trust-based tie-breaking, actual SQL execution, confidence scoring, and
 reusing previously-approved answers. All of these are explained in the sections below — none of
-them are built yet, and per the "measure before adding" rule above, they only get added if Phase 0's
-eval set shows they're actually needed.
-
-**One real bug found and fixed along the way:** `qdrant_store.py`'s search function originally
-called `QdrantClient.search()` — but the version of the `qdrant-client` library actually installed
-on this machine doesn't have that method anymore; it had been replaced upstream with
-`.query_points()`. This bug went completely unnoticed for a while, because the Query screen used to
-be just a placeholder — nothing ever actually called the search function until Phase 1 was built
-and exercised for the first time. It's a good illustration of why the project currently has no
-automated test suite anywhere (worth being extra careful about, and double-checking changes by
-actually running them, rather than assuming they work).
+them are built yet, and per the "measure before adding" rule above, they only get added if the
+golden eval set shows they're actually needed.
 
 ### Phase 2 — accuracy layers (⬜ planned, not yet built)
 
@@ -348,15 +312,31 @@ measure."
 
 The order planned:
 
-1. **HyDE query rewriting** — before searching, have the AI imagine what an ideal answer would
+1. **Embed representative example questions per table** — generate a handful of plain-English
+   example questions per table and embed them alongside the description, so a real question can be
+   compared against _other questions_ instead of only a formal description. Since SQL execution
+   doesn't exist in this project yet (that's Phase 3, further down), each generated example
+   question is validated by a **person** instead — in the same Build Metadata screen already used
+   to review descriptions — rather than by running it against a database.
+2. **HyDE query rewriting** — before searching, have the AI imagine what an ideal answer would
    look like, and search using _that_ instead of the raw question.
-2. **Hybrid dense + keyword search with RRF fusion** — run a classic keyword search alongside the
-   existing meaning-based search, and merge the two ranked result lists together.
-3. **Cross-encoder reranking** — take the merged shortlist of candidates and re-score it more
+3. **Hybrid dense + keyword + AI-native schema-linking search, merged with RRF fusion** — run a
+   classic keyword search alongside the existing meaning-based search, _and_ a third search: ask the
+   AI directly, before it sees any search results at all, what it thinks the answer needs (either by
+   naming tables/columns outright, or by drafting a rough hypothetical SQL query and reading off
+   whatever schema it references) — then merge all three ranked result lists together. This third
+   channel is the only one of the three that can catch a case where the question's wording doesn't
+   match the stored text either by meaning _or_ by exact words — for example, "how long does review
+   take" vs. the stored `turnarounddays` column, which is the one known miss in the current golden
+   eval (section 4 above).
+4. **Cross-encoder reranking** — take the merged shortlist of candidates and re-score it more
    carefully before picking the true final results.
-4. **Parent/child expansion** — when a column-level match is found, also pull in its table's
-   overall description for context.
-5. **Trust-based tie-breaking** — when two results are equally relevant, prefer the one a human has
+5. **Parent/child + relational-closure expansion** — when a column-level match is found, also pull
+   in its table's overall description for context, and also automatically pull in any _other_ table
+   connected to it by a foreign key **[a column in one table that points to a matching row in
+   another table — the mechanism that makes multi-table SQL queries possible]**, using join keys
+   explicitly flagged in the metadata.
+6. **Trust-based tie-breaking** — when two results are equally relevant, prefer the one a human has
    already verified over one that's only AI-generated and unreviewed.
 
 ### Phase 3 — execution and safety (⬜ planned, not yet built)
@@ -398,9 +378,20 @@ section explains the reasoning behind _where the project is headed_.
   step 4: instead of embedding just the raw description, embed a short prefix giving the source
   database, table name, and column name as well, so that identity information is part of the
   _meaning_ being searched, not just side-note data sitting unused next to the vector. This is the
-  one build-time change in this whole design — every other step below is about runtime search, not
-  the already-working Build Metadata pipeline. One caveat: this only affects entries saved _after_
-  the fix — anything embedded before it keeps the old, un-prefixed vector until it's regenerated.
+  one build-time change already made in this design — Step 1b just below is a second, planned
+  build-time change; every step from Step 2 onward is about runtime search, not the already-working
+  Build Metadata pipeline. One caveat: this only affects entries saved _after_ the fix — anything
+  embedded before it keeps the old, un-prefixed vector until it's regenerated.
+
+- **Step 1b — also embed example questions per table (⬜ planned).** Beyond embedding descriptions
+  (Step 1 above), generate a small handful (3-5) of representative plain-English example questions
+  per table — the kind a real business user might actually type — and embed those alongside the
+  description, as their own distinct entry type, separate from the regular schema descriptions. The
+  reasoning: a business question and a formal column description are written in noticeably
+  different styles, and comparing a real question against _other questions_ (**query-to-query
+  matching**) tends to beat comparing it against a formal description (**query-to-description
+  matching**). As noted above, validation here is done by a human reviewer, not by executing the
+  generated questions as SQL, since SQL execution doesn't exist yet in this project.
 
 - **Step 2 — don't embed the raw question (⬜ planned).** A business question ("show me compliance
   violations this quarter") and a column description ("stores the review status for flagged
@@ -412,39 +403,57 @@ section explains the reasoning behind _where the project is headed_.
   question. This turns the comparison into description-to-description matching, which tends to
   work noticeably better than question-to-description matching.
 
-- **Step 3 — search two ways in parallel (⬜ planned).** Run the HyDE-based vector search (**dense
-  search** — searching by meaning, via embeddings) and, at the same time, a classic keyword search
-  called **BM25** **[a well-established keyword-matching search algorithm that finds items sharing
-  the exact same words, rather than similar meaning]** over the same stored data. This combination
-  is called **hybrid search**. The reason: database metadata is full of exact codes, table names,
-  and abbreviations (things like `CDSCode`, `IMEI`, `pip_violations`) that meaning-based embedding
-  search is known to sometimes miss, precisely because it's optimized for _meaning_ rather than
-  _exact matching_ — keyword search catches exactly what embedding search tends to be weak at. If a
-  `domain_tag` or source database is already known ahead of time (say, the user already picked
-  which database they're asking about), that gets applied as a filter to both searches before they
-  even run.
+- **Step 3 — search three ways in parallel, not one (⬜ planned).** Run the HyDE-based vector search
+  (**dense search** — searching by meaning, via embeddings) and, at the same time, a classic keyword
+  search called **BM25** **[a well-established keyword-matching search algorithm that finds items
+  sharing the exact same words, rather than similar meaning]** over the same stored data — plus a
+  third search, **AI-native schema linking**: ask the AI directly, given only the question and a
+  lightweight list of table/column names (before it's shown any search results at all), what it
+  would look for to answer this — either by naming tables/columns outright, or by drafting a rough,
+  hypothetical SQL query and reading off whatever schema names it references — and treat whatever it
+  names as a third ranked candidate list. This combination of all three is called **hybrid search**.
+  The reason for the keyword channel: database metadata is full of exact codes, table names, and
+  abbreviations (things like `CDSCode`, `IMEI`, `pip_violations`) that meaning-based embedding search
+  is known to sometimes miss, precisely because it's optimized for _meaning_ rather than _exact
+  matching_ — keyword search catches exactly what embedding search tends to be weak at. The reason
+  for the AI-native channel: it's the only one of the three that doesn't depend on the stored text
+  matching the question at all, by meaning or by exact words — it catches cases where the question's
+  business phrasing (e.g. "how long does review take") shares neither meaning nor spelling with the
+  stored column name (`turnarounddays`), but a general-purpose AI's own knowledge of business
+  language can still bridge that gap. This directly targets the one known miss in the current golden
+  eval (section 4 above). If a `domain_tag` or source database is already known ahead of time (say,
+  the user already picked which database they're asking about), that gets applied as a filter to the
+  dense and keyword searches before they even run.
 
-- **Step 4 — merge, then rerank (⬜ planned).** The two separately-ranked candidate lists (dense and
-  keyword, maybe 50 results each) get combined into one list using **RRF** — **Reciprocal Rank
-  Fusion**, a simple, well-tested mathematical way to merge two differently-scored ranked lists
-  into a single fair ranking, without needing to directly compare their raw, differently-scaled
-  scores. This produces a shortlist of maybe 30-50 candidates. That shortlist then gets passed
-  through a **cross-encoder reranker** **[a slower but more careful comparison model: after a broad
-  search returns a shortlist of "good enough" candidates, this looks at each individual candidate
-  together with the original question, one pair at a time, and produces a more careful relevance
-  score — too slow to run over an entire database up front, which is exactly why it only runs on
-  the already-narrowed-down shortlist]**, producing the true final top 5-10 results. Across all the
-  research surveyed, this single step is flagged as the single highest-leverage accuracy
-  improvement available — bigger than the choice of embedding model or how the two lists get fused
-  together — and it stays cheap specifically because it only ever runs on a small shortlist, never
-  the whole database.
+- **Step 4 — merge, then rerank (⬜ planned).** The three separately-ranked candidate lists (dense,
+  keyword, and AI-native, maybe 50 results each) get combined into one list using **RRF** —
+  **Reciprocal Rank Fusion**, a simple, well-tested mathematical way to merge multiple
+  differently-scored ranked lists into a single fair ranking, without needing to directly compare
+  their raw, differently-scaled scores. This produces a shortlist of maybe 30-50 candidates. That
+  shortlist then gets passed through a **cross-encoder reranker** **[a slower but more careful
+  comparison model: after a broad search returns a shortlist of "good enough" candidates, this
+  looks at each individual candidate together with the original question, one pair at a time, and
+  produces a more careful relevance score — too slow to run over an entire database up front, which
+  is exactly why it only runs on the already-narrowed-down shortlist]**, producing the true final
+  top 5-10 results. Across all the research surveyed, this single step is flagged as the single
+  highest-leverage accuracy improvement available — bigger than the choice of embedding model or how
+  the two lists get fused together — and it stays cheap specifically because it only ever runs on a
+  small shortlist, never the whole database.
 
-- **Step 5 — expand parent/child before handing off (⬜ planned).** The stored data already
-  naturally has a "parent/child" shape: one entry describing a table overall, plus separate entries
-  for each of its columns. If the final reranked results include a column-level entry, its sibling
-  table-level entry gets pulled in too (and vice versa), so the AI drafting the final SQL always
-  sees a column's specific meaning _together with_ its table's overall purpose, rather than a
-  column description sitting in isolation with no context about what table it even belongs to.
+- **Step 5 — expand parent/child, and FK-connected tables, before handing off (⬜ planned).** The
+  stored data already naturally has a "parent/child" shape: one entry describing a table overall,
+  plus separate entries for each of its columns. If the final reranked results include a
+  column-level entry, its sibling table-level entry gets pulled in too (and vice versa), so the AI
+  drafting the final SQL always sees a column's specific meaning _together with_ its table's
+  overall purpose, rather than a column description sitting in isolation with no context about what
+  table it even belongs to. The same idea gets extended to **relational closure** **[making sure
+  every table needed to complete a join is included in the final context, not just the ones that
+  matched the search directly]**: if a table connected by a foreign key isn't already in the result
+  set, pull it in too, so a question spanning two related tables still ends up with both in
+  context. This depends on join keys being explicitly flagged in the metadata first — a cheap,
+  build-time-only addition to the AI's description-writing prompt (asking "is this a join key, and
+  to what other table/column does it connect?"), which can be made independently of the rest of
+  this search pipeline since it only touches build-time, not search.
 
 - **Step 6 — break ties using trust, not just similarity (⬜ planned).** When two candidate entries
   come back roughly equally relevant, prefer the one already marked `human_verified: true` or
@@ -453,10 +462,11 @@ section explains the reasoning behind _where the project is headed_.
   today — it just isn't being used to influence ranking yet.
 
 **As one sentence, the full target design:** a user's question gets rewritten into a hypothetical
-answer, searched both by meaning and by keyword in parallel with any known filters applied, merged
-into one shortlist, reranked for real relevance, expanded to include parent-table context, and
-tie-broken in favor of human-approved metadata — all continuously measured against the golden
-query set so every single step can be proven to actually help before it ships.
+answer, searched by meaning, by keyword, and by asking the AI directly, all in parallel with any
+known filters applied, merged into one shortlist, reranked for real relevance, expanded to include
+parent-table and FK-connected context, and tie-broken in favor of human-approved metadata — all
+continuously measured against the golden query set so every single step can be proven to actually
+help before it ships.
 
 ---
 
@@ -479,24 +489,17 @@ adopting eventually, but not yet slotted into a specific build phase. None of th
   sensitive data may be used, distinct from a purely technical/engineering choice]**, not just an
   engineering one. It needs an explicit yes/no from whoever owns that decision before any code gets
   written for it — it is not being built on a default-on assumption just because research recommends
-  it.
-
-- **Explicitly flag join/foreign-key columns in metadata.** An undocumented **join key** **[a
-  column used to connect rows in one table to matching rows in another table — the mechanism that
-  makes multi-table SQL queries possible]** is one of the single biggest causes of text-to-SQL
-  failure in the surveyed research (11.6% in one paper). The metadata already has a `related_tables`
-  field for this, but it's implicit — worth making the AI's description prompt explicitly ask "is
-  this a join key, and to what other table/column does it connect?"
+  it. A closely related idea, **value-based schema matching** — matching a question against actual
+  stored column values, rather than just structure — is blocked on this exact same decision, for the
+  exact same reason.
 
 - **Mine a synonym/glossary layer across different database types.** The same business concept
   often has a different physical column name depending on which database system stores it (SQL
   Server vs Oracle, for instance). A cross-table **glossary** **[a lookup list mapping business
   terms to the actual column names that represent them across different systems]**, fed into the
   description-writing prompt, would make descriptions consistent regardless of which underlying
-  database they came from. This is exactly the glossary feature that was in an earlier design
-  document but never actually got built (the empty `glossary/` and `glossary_data/` folders
-  mentioned in section 3 are the leftover placeholders from that earlier, abandoned attempt) — worth
-  resurrecting specifically for this reason.
+  database they came from. This would reuse the `glossary/` and `glossary_data/` folders already
+  sitting empty in the code.
 
 **A near-complete reference architecture for later runtime work:**
 
@@ -504,22 +507,6 @@ adopting eventually, but not yet slotted into a specific build phase. None of th
   databases connected, search should first figure out _which database_ is relevant to a question,
   and only then drill into that specific database's tables — rather than running one flat search
   across every database at once.
-
-- **Embed example questions per table, not just descriptions.** Comparing a real question against
-  _other example questions_ tends to work better than comparing it against a formal description.
-  The idea: generate a handful of representative plain-English example questions per table
-  (double-checked by actually running them as real SQL first, to make sure they're valid), and
-  embed those questions alongside the formal description, so future questions have more to match
-  against.
-
-- **Hybrid schema linking with relational closure.** Combine three different ways of figuring out
-  which tables/columns matter for a question: asking the AI directly, having the AI draft SQL first
-  and observing which tables/columns it actually used, and matching based on real stored values.
-  Then automatically pull in any table connected by a foreign key relationship — called
-  **relational closure** **[making sure every table needed to complete a join is included in the
-  final context, not just the ones that happened to match the search directly]** — so that joins
-  between tables stay possible in the final generated SQL, instead of trusting a single search pass
-  alone.
 
 **Ideas looked at and explicitly rejected — not on the backlog at all, listed here only for
 completeness:**
@@ -599,8 +586,7 @@ If you go looking through the actual repository, here's what maps to what descri
     fallback parser.
   - `pipeline/nodes/guardian_node.py` — the rules-based quality gate (section 3, step 3).
   - `pipeline/nodes/normalise_node.py` — data cleanup/normalization between the other pipeline
-    steps. (Note: an earlier design document described separate connect/crawl/diff pipeline nodes;
-    those don't exist in the actual code — it always re-crawls fully, with no incremental diffing.)
+    steps. (The pipeline always re-crawls fully each run — there's no incremental diff step.)
   - `vector_store/qdrant_store.py` — stores/searches embeddings in Qdrant (section 3, step 4, and
     section 5, step 1).
   - `database/sqlite_store.py` — the full version-history/audit log (section 3, step 5).
@@ -612,8 +598,8 @@ If you go looking through the actual repository, here's what maps to what descri
   - `fastembed_cache/` — the committed, offline-ready embedding model files.
   - `qdrant_data/` — the actual on-disk vector database files.
   - `rivdw_app.db` — the SQLite history/audit database file.
-  - `glossary/`, `glossary_data/` — empty, currently unused leftovers from an earlier, abandoned
-    design (see section 6's glossary idea, which would eventually resurrect these).
+  - `glossary/`, `glossary_data/` — empty, unused folders (see section 6's glossary idea for the
+    plan to eventually use them).
 
 - `rivdw_runtime/` — the runtime half described in section 4.
   - `query_engine.py` — the actual Phase 1 walking-skeleton search-and-draft flow.

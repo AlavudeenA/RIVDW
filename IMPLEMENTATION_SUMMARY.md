@@ -237,19 +237,26 @@ through.
 In this order, per the priority list already worked out in "Our accurate-retrieval design" below —
 add **one** improvement, re-run `eval/run_eval.py` from Phase 0, and only keep the change if the
 Recall@K score measurably went up. If it doesn't help, it gets reverted, not kept "just in case."
-Each one is explained in full further down (Steps 2–6 of "Our accurate-retrieval design") — this
-list is just the short version, in build order:
+Each one is explained in full further down (Step 1b and Steps 2–6 of "Our accurate-retrieval
+design") — this list is just the short version, in build order:
 
-1. **HyDE query rewriting** (Step 2 below) — before searching, have the AI imagine what the ideal
+1. **Embed representative example questions per table** (Step 1b below) — generate a handful of
+   plain-English example questions per table and embed them alongside the description, so a real
+   question can match against other questions instead of only a formal description. Validated by a
+   human in the existing Build Metadata screen, not by running the questions as real SQL, since SQL
+   execution is Phase 3 and doesn't exist yet.
+2. **HyDE query rewriting** (Step 2 below) — before searching, have the AI imagine what the ideal
    answer would look like, and search using that instead of the raw question.
-2. **Hybrid dense + BM25 search with RRF fusion** (Step 3 below) — add a plain keyword search
-   alongside the meaning-based one, so exact codes/IDs aren't missed, then merge the two result
-   lists.
-3. **Cross-encoder reranking** (Step 4 below) — take the merged shortlist and re-score it more
+3. **Hybrid dense + BM25 + AI-native schema-linking search, merged with RRF fusion** (Step 3
+   below) — add a plain keyword search and a direct "ask the AI what it would look for" search
+   alongside the meaning-based one, so exact codes/IDs aren't missed and phrasing gaps the other two
+   search types can't bridge get a chance to be caught, then merge all three result lists.
+4. **Cross-encoder reranking** (Step 4 below) — take the merged shortlist and re-score it more
    carefully before picking the final results.
-4. **Parent/child expansion** (Step 5 below) — when a column matches, also pull in its table's
-   overall description for context.
-5. **Trust-based tie-breaking** (Step 6 below) — when two results are equally relevant, prefer the
+5. **Parent/child + relational-closure expansion** (Step 5 below) — when a column matches, also
+   pull in its table's overall description for context, and also auto-include any other table
+   connected to it by a foreign key, using join keys explicitly flagged in the metadata.
+6. **Trust-based tie-breaking** (Step 6 below) — when two results are equally relevant, prefer the
    one a human has already verified.
 
 ### Phase 3 — execution and safety, only after Phase 2 is trustworthy
@@ -297,6 +304,7 @@ only the idea attributed to it.
    one of the single biggest causes of text-to-SQL failure (11.6% in one paper). RIVDW's descriptions
    already have a `related_tables` field — worth making the enrichment prompt explicitly ask
    "is this a join key, and to what other table/column?" instead of leaving it implicit.
+   **Status: scheduled** — see Phase 2's parent/child + relational-closure expansion (Step 5) above.
 3. **Mine a synonym/glossary layer across DB types.** Same business concept, different physical
    column name in SQL Server vs Oracle. A cross-table glossary **[a lookup list mapping business
    terms to the actual column names that mean them]** fed into the enrichment prompt (Pinterest
@@ -322,13 +330,20 @@ Several of the papers hand over an almost-complete reference architecture for ru
    matching **[comparing a real question against a formal description]**. At build-time — or once
    real usage exists — generate a handful of representative plain-English questions per table
    (double-checked by actually running them as SQL first) and embed those alongside the
-   description.
+   description. **Status: scheduled** — see Phase 2 item 1 / Step 1b above (validated via human
+   review instead of running the questions as SQL, since SQL execution doesn't exist yet).
 7. **Hybrid schema linking with relational closure.** Combine three different ways of figuring out
    which tables/columns are relevant: asking the LLM directly, having the LLM draft SQL first and
    seeing which schema it used, and matching based on actual stored values. Then automatically
    pull in any table connected by a foreign key — relational closure **[making sure every table
    needed for a join is included, not just the ones that matched the search directly]** — so joins
-   stay possible, instead of trusting one search pass alone.
+   stay possible, instead of trusting one search pass alone. **Status: mostly scheduled** — the
+   relational-closure piece is now part of Phase 2's Step 5 above, and "asking the LLM directly" +
+   "draft SQL first and see what schema it used" have been merged into one new signal, **AI-native
+   schema linking**, now part of Phase 2's Step 3 (see below) as a third parallel search channel
+   alongside dense and keyword search. Only the "matching based on actual stored values" piece
+   remains unscheduled — it's blocked on the same governance decision as item #1 above (sampling
+   real column values), since both need real column data, not just structure.
 8. **Execution-guided self-correction.** Actually run the generated SQL; if it errors or returns
    nothing, feed that error back to the LLM for one bounded retry before giving up. This is the
    single most commonly validated technique across the literature.
@@ -370,8 +385,9 @@ finding the relevant information before an AI generates an answer from it]**/emb
 and judges each one against RIVDW specifically. This section combines the ones that survived that
 judgment into **a single retrieval pipeline** — described here as one flow rather than a list of
 independent choices. It is _not_ what gets built on day one: the "Runtime build plan" section
-above is the actual order of work, starting from Phase 1's plain top-5 search. Steps 2–6 below
-correspond to Phase 2's accuracy layers, added and measured one at a time rather than all at once.
+above is the actual order of work, starting from Phase 1's plain top-5 search. Step 1b and Steps
+2–6 below correspond to Phase 2's accuracy layers, added and measured one at a time rather than all
+at once.
 
 ### Step 0 — measure before building anything
 
@@ -394,10 +410,26 @@ short prefix giving that context along with the description:
 ```
 
 e.g. `"compliance_db > TradeRequest.status: The status column captures... "`. This was the one
-build-time change in the whole plan — everything else below is retrieval-side and touches the
-runtime Query screen, not the working Build Metadata pipeline. One caveat: this only affects
-entries saved from the fix onward — anything embedded before it keeps the old, un-prefixed vector
-until regenerated (Regenerate button per table, or Reset Vector Store + re-run for everything).
+build-time change already made in the whole plan — Step 1b below is a second, planned build-time
+change; everything from Step 2 onward is retrieval-side and touches the runtime Query screen, not
+the working Build Metadata pipeline. One caveat: this only affects entries saved from the fix
+onward — anything embedded before it keeps the old, un-prefixed vector until regenerated
+(Regenerate button per table, or Reset Vector Store + re-run for everything).
+
+### Step 1b — also embed example questions per table (storage side) — ⬜ planned
+
+Beyond embedding descriptions (Step 1 above), generate a small handful (3-5) of representative
+plain-English example questions per table — the kind a real business user might actually type — and
+embed those alongside the description, tagged as their own entry type (e.g. `example_question`,
+distinct from `schema_metadata`). The reasoning: a business question and a formal column
+description are written in noticeably different styles, and comparing a real question against
+*other questions* (query-to-query matching) tends to beat comparing it against a formal description
+(query-to-description matching). The source research suggests validating each generated example
+question by actually running it as real SQL before trusting it — but SQL execution doesn't exist in
+this project yet (that's Phase 3, further below), and Phase 2 items shouldn't secretly depend on
+Phase 3. So here, validation instead reuses the same human-review pattern already built for
+descriptions (the Build Metadata screen): a person looks at each generated example question and
+approves or edits it before it's stored, exactly like any other AI-generated description.
 
 ### Step 2 — when a question comes in, don't embed it raw
 
@@ -409,24 +441,34 @@ answer would look like, then search using that imagined answer's embedding inste
 question]**. This turns the search into description-to-description matching, which tends to work
 better than question-to-description matching.
 
-### Step 3 — search two ways in parallel, not one
+### Step 3 — search three ways in parallel, not one
 
 Run the HyDE vector against Qdrant (dense search **[search by meaning, via embeddings]**, top ~50)
 **and** a simple keyword/BM25 **[a classic keyword-matching search algorithm — finds items sharing
-the exact same words]** search over the same data (top ~50) at the same time, then combine both
-lists — hybrid search **[running a meaning-based search and a keyword search together to get the
-strengths of both]**. Database metadata is full of exact codes, table names, and abbreviations
-that dense/embedding-based search is known to miss (`CDSCode`, `IMEI`, `pip_violations`) — keyword
-search catches exactly what meaning-based search is weak at. If a `domain_tag` **[a label like
-`compliance` or `brokerage` attached to each database and each piece of metadata]** or `source_db`
-is already known (e.g. the user picked a database first), apply it as a filter on both searches
-before they run, using payload fields that already exist on every stored entry.
+the exact same words]** search over the same data (top ~50) **and** a third channel, **AI-native
+schema linking**: ask the LLM directly, given only the question and a lightweight list of
+table/column names (no retrieved candidates yet), what it would look for to answer this — either by
+naming tables/columns directly, or by drafting a rough, hypothetical SQL query and reading off
+whatever schema names appear in it — then treat whatever it names as a third ranked candidate list.
+All three run at the same time, then get combined — hybrid search **[running a meaning-based
+search, a keyword search, and a direct LLM-reasoning search together, to get the strengths of all
+three]**. Database metadata is full of exact codes, table names, and abbreviations that
+dense/embedding-based search is known to miss (`CDSCode`, `IMEI`, `pip_violations`) — keyword search
+catches exactly what meaning-based search is weak at. The AI-native channel catches a third,
+different gap: cases where the question's business phrasing (e.g. "how long does review take")
+doesn't share meaning *or* exact words with the stored column name (`turnarounddays`), but a
+general-purpose LLM's own knowledge of business language can still bridge the gap — this is the one
+channel of the three that doesn't depend on the stored text matching the question at all, dense or
+keyword. If a `domain_tag` **[a label like `compliance` or `brokerage` attached to each database and
+each piece of metadata]** or `source_db` is already known (e.g. the user picked a database first),
+apply it as a filter on the dense and keyword searches before they run, using payload fields that
+already exist on every stored entry.
 
 ### Step 4 — merge, then rerank
 
-Combine the two candidate lists using RRF **[Reciprocal Rank Fusion — a simple, well-tested way to
-merge two separately-ranked lists into one combined ranking, without needing to compare their raw
-scores directly]** into one ranked shortlist (~30–50 entries), then run a cross-encoder reranker
+Combine the three candidate lists using RRF **[Reciprocal Rank Fusion — a simple, well-tested way to
+merge multiple separately-ranked lists into one combined ranking, without needing to compare their
+raw scores directly]** into one ranked shortlist (~30–50 entries), then run a cross-encoder reranker
 **[after the broad search returns a shortlist of "good enough" candidates, this looks at each
 candidate together with the original question, one pair at a time, for a more careful relevance
 score — too slow to run over an entire database, which is why it only runs on the shortlist]**
@@ -435,13 +477,22 @@ highest-leverage accuracy gain across all the source research — bigger than th
 embedding model or fusion method — and it's cheap to run because the shortlist going into it is
 small.
 
-### Step 5 — expand parent/child before handing off
+### Step 5 — expand parent/child (and FK-connected tables) before handing off
 
 RIVDW's data already has a "parent/child" shape for free: a table-level entry, plus one entry per
 column that belongs to it. If the reranked top results include a column entry, pull in its sibling
 table entry too (and vice versa) before building the final context — so the LLM answering the
 question always sees the table's overall purpose alongside the specific column that matched,
 rather than a column description in isolation.
+
+Extend the same idea to **relational closure** **[making sure every table needed for a join is
+included, not just the ones that matched the search directly]**: if a table connected by a foreign
+key isn't already in the result set, pull it in too, so a question spanning two related tables
+still ends up with both in context. This depends on join keys being explicitly flagged in the
+metadata first — a cheap, build-time-only change to the enrichment prompt (asking "is this a join
+key, and to what other table/column?" instead of leaving it implicit in the existing
+`related_tables` field), which can be made independently of the rest of this retrieval pipeline
+since it only touches build-time, not search.
 
 ### Step 6 — break ties using trust, not just similarity
 
@@ -452,8 +503,8 @@ screen — it just isn't used as a ranking factor yet.
 
 ### The result, as one sentence
 
-**A user's question gets rewritten into a hypothetical answer, searched both by meaning and by
-keyword in parallel with any known filters applied, merged into one shortlist, reranked for real
-relevance, expanded to include parent-table context, and tie-broken in favor of human-approved
-metadata — all measured against a golden query set so every step can be proven to help before it
-ships.**
+**A user's question gets rewritten into a hypothetical answer, searched by meaning, by keyword, and
+by asking the AI directly, all in parallel with any known filters applied, merged into one
+shortlist, reranked for real relevance, expanded to include parent-table and FK-connected context,
+and tie-broken in favor of human-approved metadata — all measured against a golden query set so
+every step can be proven to help before it ships.**
